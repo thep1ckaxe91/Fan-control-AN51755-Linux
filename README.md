@@ -6,6 +6,8 @@ You may try this in others devices to see if it works, only if the address were 
 changing 0x21 to 02 make the fan on the left 
 0x36 and 0x3A is the place to save the fan speed for custom mode of the left fan and the right fan
 
+Only tested on AN51755, use at your own risk
+
 ## How to use
 
 **You may see how to use in the script itself**
