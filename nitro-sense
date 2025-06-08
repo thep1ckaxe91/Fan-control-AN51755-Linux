@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+#
+# set-fan-control.sh — Manage Acer Nitro AN517-55 fan modes and speeds via EC
+#
+# Usage (run as root or with sudo):
+#   ./set-fan-control.sh mode <quiet|default|performance>
+#   ./set-fan-control.sh auto
+#   ./set-fan-control.sh max
+#   ./set-fan-control.sh custom <gpu_percent> <cpu_percent>
+#
+# Descriptions:
+#   mode <quiet|default|performance>   — Set EC “fan‐curve” profile via 0x2C:
+#                                         quiet = 0x00
+#                                         default = 0x01
+#                                         performance = 0x04
+#
+#   auto    — Switch both fans to Auto mode (0x21/0x22 = 0x10 0x04)
+#   max     — Switch both fans to Max mode  (0x21/0x22 = 0x20 0x08)
+#   custom  — Enter Custom mode (0x21/0x22 = 0x30 0x0C) then set:
+#                 GPU (left) fan  percentage → 0x36 (0–100 → 0x00–0x64)
+#                 CPU (right) fan percentage → 0x3A (0–100 → 0x00–0x64)
+#
+# Examples:
+#   sudo ./set-fan-control.sh mode quiet
+#   sudo ./set-fan-control.sh auto
+#   sudo ./set-fan-control.sh max
+#   sudo ./set-fan-control.sh custom 75 50
+#
+
+set -e
+
+# Ensure script is run as root
+if [[ $EUID -ne 0 ]]; then
+  echo "❌ Please run as root (e.g. sudo $0 ...)."
+  exit 1
+fi
+
+
+# Ensure debugfs is mounted and ec_sys is loaded with write support
+prepare_ec() {
+  # Reload ec_sys with write_support=1
+  modprobe -r ec_sys 2>/dev/null || true
+  modprobe ec_sys write_support=1
+
+  # Mount debugfs if not already mounted
+  if ! mountpoint -q /sys/kernel/debug; then
+    mount -t debugfs debugfs /sys/kernel/debug
+  fi
+}
+
+# Write a single byte to EC offset (zero-based)
+# Arguments: <offset_decimal> <hex_byte> e.g. write_byte 44 0x04
+write_byte() {
+  local offset="$1"
+  local hexval="$2"
+  printf "\\x${hexval:2:2}" | dd of=/sys/kernel/debug/ec/ec0/io bs=1 seek=$offset count=1 conv=notrunc &>/dev/null
+}
+
+# Write two bytes to consecutive EC offsets
+# Arguments: <offset_decimal> <hex_byte1> <hex_byte2>
+write_two_bytes() {
+  local offset="$1"
+  local hex1="$2"
+  local hex2="$3"
+  printf "\\x${hex1:2:2}\\x${hex2:2:2}" | dd of=/sys/kernel/debug/ec/ec0/io bs=1 seek=$offset count=2 conv=notrunc &>/dev/null
+}
+
+# Validate percentage 0–100
+validate_pct() {
+  if ! [[ "$1" =~ ^[0-9]+$ ]] || (( $1 < 0 || $1 > 100 )); then
+    echo "❌ Invalid percentage: '$1' (must be integer 0–100)."
+    exit 1
+  fi
+}
+
+# Map 0–100 to a single byte (0x00–0x64)
+pct_to_byte() {
+  local pct="$1"
+  # Print as two-digit uppercase hex, zero-padded
+  printf "%02X" "$pct"
+}
+
+
+# Main command parsing
+if [[ $# -lt 1 ]]; then
+  echo "Usage:"
+  echo "  sudo $0 mode <quiet|default|performance>"
+  echo "  sudo $0 auto"
+  echo "  sudo $0 max"
+  echo "  sudo $0 custom <gpu_percent> <cpu_percent>"
+  exit 1
+fi
+
+CMD="$1"
+prepare_ec
+
+# Write 0x11 at 0x03 (manual fan control mode register of Nitro 5) 
+echo -ne '\x11' | dd of=/sys/kernel/debug/ec/ec0/io bs=1 seek=$((0x03)) conv=notrunc
+
+
+case "$CMD" in
+  mode)
+    if [[ $# -ne 2 ]]; then
+      echo "Usage: sudo $0 mode <quiet|default|performance>"
+      exit 1
+    fi
+    case "$2" in
+      quiet)
+        write_byte 44 0x00   # EC offset 0x2C (decimal 44) = 0x00
+        echo "✅ Fan curve set to 'quiet' (0x2C=0x00)."
+        ;;
+      default)
+        write_byte 44 0x01   # EC offset 0x2C = 0x01
+        echo "✅ Fan curve set to 'default' (0x2C=0x01)."
+        ;;
+      performance)
+        write_byte 44 0x04   # EC offset 0x2C = 0x04
+        echo "✅ Fan curve set to 'performance' (0x2C=0x04)."
+        ;;
+      *)
+        echo "Usage: sudo $0 mode <quiet|default|performance>"
+        exit 1
+        ;;
+    esac
+    ;;
+
+  auto)
+    # Auto mode: write 0x10 0x04 to offsets 0x21/0x22 (decimal 33/34)
+    write_two_bytes 33 0x10 0x04
+    echo "✅ Fans set to 'Auto' (0x21/0x22=0x10 0x04)."
+    ;;
+
+  max)
+    # Max mode: write 0x20 0x08 to offsets 0x21/0x22
+    write_two_bytes 33 0x20 0x08
+    echo "✅ Fans set to 'Max' (0x21/0x22=0x20 0x08)."
+    ;;
+
+  custom)
+    if [[ $# -ne 3 ]]; then
+      echo "Usage: sudo $0 custom <gpu_percent> <cpu_percent>"
+      exit 1
+    fi
+    GPU_PCT="$2"
+    CPU_PCT="$3"
+    validate_pct "$GPU_PCT"
+    validate_pct "$CPU_PCT"
+
+    # Convert percentages to bytes (00–64)
+    GPU_BYTE=$(pct_to_byte "$GPU_PCT")
+    CPU_BYTE=$(pct_to_byte "$CPU_PCT")
+
+    # Step 1: Put EC in Custom mode (0x30 0x0C at offsets 0x21/0x22)
+    write_two_bytes 33 0x30 0x0C
+
+    # Step 2: Write GPU speed to offset 0x36 (decimal 54)
+    write_byte 54 "0x$GPU_BYTE"
+
+    # Step 3: Write CPU speed to offset 0x3A (decimal 58)
+    write_byte 58 "0x$CPU_BYTE"
+
+    echo "✅ Custom fan mode enabled:"
+    echo "   • GPU (left) fan → ${GPU_PCT}% (0x36=0x${GPU_BYTE})"
+    echo "   • CPU (right) fan → ${CPU_PCT}% (0x3A=0x${CPU_BYTE})"
+    ;;
+
+  *)
+    echo "Unknown command: $CMD"
+    echo "Usage:"
+    echo "  sudo $0 mode <quiet|default|performance>"
+    echo "  sudo $0 auto"
+    echo "  sudo $0 max"
+    echo "  sudo $0 custom <gpu_percent> <cpu_percent>"
+    exit 1
+    ;;
+esac
+
+exit 0
