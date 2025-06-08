@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# set-fan-control.sh — Manage Acer Nitro AN517-55 fan modes and speeds via EC
+# Manage Acer Nitro AN517-55 fan modes and speeds via EC
 #
 # Usage (run as root or with sudo):
 #   ./set-fan-control.sh mode <quiet|default|performance>
@@ -21,10 +21,10 @@
 #                 CPU (right) fan percentage → 0x3A (0–100 → 0x00–0x64)
 #
 # Examples:
-#   sudo ./set-fan-control.sh mode quiet
-#   sudo ./set-fan-control.sh auto
-#   sudo ./set-fan-control.sh max
-#   sudo ./set-fan-control.sh custom 75 50
+#   sudo nitro-sense mode quiet
+#   sudo nitro-sense auto
+#   sudo nitro-sense max
+#   sudo nitro-sense custom 75 50
 #
 
 set -e
@@ -94,7 +94,7 @@ fi
 CMD="$1"
 prepare_ec
 
-# Write 0x11 at 0x03 (manual fan control mode register of Nitro 5) 
+# Write 0x11 at 0x03 register to switch to manual fan control mode
 echo -ne '\x11' | dd of=/sys/kernel/debug/ec/ec0/io bs=1 seek=$((0x03)) conv=notrunc
 
 
@@ -141,10 +141,10 @@ case "$CMD" in
       echo "Usage: sudo $0 custom <gpu_percent> <cpu_percent>"
       exit 1
     fi
-    GPU_PCT="$2"
-    CPU_PCT="$3"
-    validate_pct "$GPU_PCT"
+    CPU_PCT="$2"
+    GPU_PCT="$3"
     validate_pct "$CPU_PCT"
+    validate_pct "$GPU_PCT"
 
     # Convert percentages to bytes (00–64)
     GPU_BYTE=$(pct_to_byte "$GPU_PCT")
@@ -167,10 +167,10 @@ case "$CMD" in
   *)
     echo "Unknown command: $CMD"
     echo "Usage:"
-    echo "  sudo $0 mode <quiet|default|performance>"
-    echo "  sudo $0 auto"
-    echo "  sudo $0 max"
-    echo "  sudo $0 custom <gpu_percent> <cpu_percent>"
+    echo "  sudo nitro-sense mode <quiet|default|performance>"
+    echo "  sudo nitro-sense auto"
+    echo "  sudo nitro-sense max"
+    echo "  sudo nitro-sense custom <cpu_percent> <gpu_percent>"
     exit 1
     ;;
 esac
