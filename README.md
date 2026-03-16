@@ -8,9 +8,35 @@ changing 0x21 to 02 make the fan on the left
 
 Only tested on AN51755, use at your own risk
 
-## How to use
+## How to Use
 
-**You may see how to use in the script itself**
+Run the script as root or with `sudo`. The commands are organized to mirror the original Nitro Sense GUI sections.
+
+### 1. Fan Control
+| Command | Action | Description |
+| :--- | :--- | :--- |
+| `sudo nitro-sense auto` | **Auto** | Standard automatic fan control. |
+| `sudo nitro-sense max` | **Max** | Forces both fans to 100% speed. |
+| `sudo nitro-sense custom <cpu_%> <gpu_%>` | **Custom** | Manually set fan speeds (0-100). |
+
+### 2. Mode (Fan Curves)
+| Command | Action | Description |
+| :--- | :--- | :--- |
+| `sudo nitro-sense mode quiet` | **Quiet** | Minimizes fan noise. |
+| `sudo nitro-sense mode default` | **Default** | Balanced thermal profile. |
+| `sudo nitro-sense mode performance` | **Performance** | Aggressive cooling for gaming. |
+
+### Examples
+```bash
+# Set fans to Max speed
+sudo nitro-sense max
+
+# Set CPU fan to 80% and GPU fan to 50%
+sudo nitro-sense custom 80 50
+
+# Switch to Performance mode
+sudo nitro-sense mode performance
+```
 
 ## Install
 
